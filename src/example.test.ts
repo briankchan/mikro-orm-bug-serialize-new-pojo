@@ -1,4 +1,4 @@
-import { Entity, MikroORM, PrimaryKey, Property } from '@mikro-orm/sqlite';
+import { Embeddable, Embedded, Entity, MikroORM, PrimaryKey, Property, wrap } from '@mikro-orm/sqlite';
 
 @Entity()
 class User {
@@ -6,17 +6,17 @@ class User {
   @PrimaryKey()
   id!: number;
 
+  @Embedded({ array: true, entity: () => Address })
+  addresses!: Address[]
+}
+
+@Embeddable()
+class Address {
   @Property()
-  name: string;
+  line1!: string
 
-  @Property({ unique: true })
-  email: string;
-
-  constructor(name: string, email: string) {
-    this.name = name;
-    this.email = email;
-  }
-
+  @Property()
+  line2!: string
 }
 
 let orm: MikroORM;
@@ -24,7 +24,7 @@ let orm: MikroORM;
 beforeAll(async () => {
   orm = await MikroORM.init({
     dbName: ':memory:',
-    entities: [User],
+    entities: [User, Address],
     debug: ['query', 'query-params'],
     allowGlobalContext: true, // only for testing
   });
@@ -35,17 +35,60 @@ afterAll(async () => {
   await orm.close(true);
 });
 
-test('basic CRUD example', async () => {
-  orm.em.create(User, { name: 'Foo', email: 'foo' });
-  await orm.em.flush();
-  orm.em.clear();
+test('create with entity then serialize', async () => {
+  const user = orm.em.create(User, { addresses: [{
+    line1: 'a',
+    line2: 'b'
+  }] });
+  console.log(wrap(user).serialize())
+});
 
-  const user = await orm.em.findOneOrFail(User, { email: 'foo' });
-  expect(user.name).toBe('Foo');
-  user.name = 'Bar';
-  orm.em.remove(user);
-  await orm.em.flush();
+test('push then serialize', async () => {
+  const user = orm.em.create(User, { addresses: [] });
+  user.addresses.push({
+    line1: 'a',
+    line2: 'b'
+  })
+  console.log(wrap(user).serialize())
+});
+test('push then toObject', async () => {
+  const user = orm.em.create(User, { addresses: [] });
+  user.addresses.push({
+    line1: 'a',
+    line2: 'b'
+  })
+  console.log(wrap(user).toObject())
+});
 
-  const count = await orm.em.count(User, { email: 'foo' });
-  expect(count).toBe(0);
+test('set (=) then serialize', async () => {
+  const user = orm.em.create(User, { addresses: [] });
+  user.addresses = [
+    {
+      line1: 'a',
+      line2: 'b'
+    },
+  ]
+  console.log(wrap(user).serialize())
+});
+
+test('assign then serialize', async () => {
+  const user = orm.em.create(User, { addresses: [] });
+  wrap(user).assign({
+    addresses: [
+      {
+        line1: 'a',
+        line2: 'b'
+      },
+    ]
+  }, { em: orm.em })
+  console.log(wrap(user).serialize())
+});
+
+test('create embeddable', async () => {
+  const user = orm.em.create(User, { addresses: [] });
+  user.addresses.push(orm.em.create(Address, {
+    line1: 'a',
+    line2: 'b'
+  }))
+  console.log(wrap(user).serialize())
 });
